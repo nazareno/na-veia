@@ -1,0 +1,88 @@
+---
+title: "Na veia"
+output: 
+  html_document:
+    theme: readable
+    fig_width: 7
+    toc: true
+    toc_float: true
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(screenshot.force = FALSE, echo = FALSE, warning = FALSE) 
+library(readr)
+library(dplyr, warn.conflicts = FALSE)
+library(tidyr)
+library(ggplot2)
+library(plotly)
+library(DT)
+theme_set(theme_bw())
+source("../R/veia.R")
+MINIMO_EMPENHOS = 5e5
+```
+
+```{r}
+empenhos = ler_empenhos_brutos("../dados/empenhos_por_municipio.csv",
+                               "../dados/dados_municipios.csv") %>% 
+    completa_anos() %>% 
+    filtra_relevantes(1e6, 2) %>% 
+    mutate(legislatura = ifelse(ano_eleicao == 2008,  
+                                "2009-2012", 
+                                "2013-2016")) %>% 
+    ungroup()
+```
+
+```{r plotchanges}
+p = empenhos %>%
+    filter(NOME_MUNICIPIO %in% c("Campina Grande", 
+                                 "Alagoa Nova", 
+                                 "João Pessoa", 
+                                 "Patos",
+                                 "Santa Rita")) %>% 
+    ggplot(aes(
+        x = legislatura,
+        y = (vl_Empenhos + 1),
+        group = nu_CPFCNPJ,
+        label = paste(nome_fornecedor, vl_Empenhos)
+        )) + 
+    geom_line(alpha = 0.2) + 
+    scale_y_log10() + 
+    facet_grid(NOME_MUNICIPIO ~ .) + 
+    theme(legend.position="none")
+ # ggplotly(p)
+```
+
+## Gestores novos mudam os fornecedores?
+
+**Depende**. A correlação abaixo é positiva quando há uma grande chance de os fornecedores que mais receberam em uma gestão serem os que mais receberam na seguinte. É negativa quando ter recebido mais em uma gestão aumenta sua chance de receber menos na gestão seguinte.
+
+```{r correlacoes}
+mudancas = calcula_mudancas(empenhos)
+    
+m = mudancas %>% 
+    ggplot(aes(x = mudou, y = correlacao, label = txt)) + 
+    geom_violin(alpha = .3) + 
+    geom_point(position = position_jitter(.3), alpha = .6, size = 3, colour = "darkorange")
+ggplotly(m, tooltip = c("label"))
+```
+
+```{r}
+chchchanges = mudancas %>% 
+    group_by(partido2013) %>% 
+    summarise(n = n(), mediana = median(correlacao)) %>% 
+    arrange(mediana)
+
+x = mudancas %>% 
+    filter(mudou == TRUE) %>% 
+    left_join(chchchanges, by = "partido2013") %>% 
+    filter(n > 5)
+
+m =  x %>% 
+    ggplot(aes(x = reorder(partido2013, mediana), y = correlacao, colour = partido2013, label = txt)) + 
+    geom_boxplot(alpha = .3) + 
+    geom_point(position = position_jitter(.3), alpha = .6, size = 3) + 
+    theme(legend.position="none") 
+ggplotly(m, tooltip = c("label"))
+
+```
+
